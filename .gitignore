@@ -1,0 +1,5 @@
+.stack-work/
+transmografier.cabal
+*~
+.vscode/
+uploads/
