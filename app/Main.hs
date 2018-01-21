@@ -7,30 +7,35 @@ module Main where
 import Control.Monad.IO.Class (liftIO)
 import Conversion (Conversion(..), Scale(..))
 import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>))
 import Data.Text.Encoding (decodeUtf8)
-import Data.Text.Lazy (Text)
-import Data.UUID (UUID)
+import Data.Text.Lazy (Text, concat, fromStrict)
+import Data.UUID (UUID, toText)
 import Data.UUID.V4 (nextRandom)
 import FileOps
        (FileData(..), conversionPath, mkConversionDir, writeConversion,
         writePpt)
 import Filesystem.Path.CurrentOS (FilePath, fromText)
 import Network.HTTP.Types (status202, status400)
-import Network.Wai.Middleware.RequestLogger (logStdoutDev)
+import Network.Wai.Middleware.RequestLogger (logStdout)
 import Network.Wai.Parse (FileInfo(..))
-import Prelude hiding (FilePath)
+import Prelude hiding (FilePath, concat, log)
 import System.Environment (lookupEnv)
+import System.Log.FastLogger
+       (FormattedTime, LogStr, LogType(..), TimedFastLogger, ToLogStr,
+        defaultBufSize, toLogStr, withTimedFastLogger)
+import System.Log.FastLogger.Date (newTimeCache, simpleTimeFormat)
 import Web.Scotty
        (ActionM, Parsable, ScottyM, files, get, json, middleware, param,
         post, rescue, scotty, status, text)
 
 type Result a = Either Text a
 
-app :: ScottyM ()
-app = do
-  middleware logStdoutDev
+app :: TimedFastLogger -> ScottyM ()
+app logger = do
+  middleware logStdout
   get "/" $ text "hello"
-  post "/api/convert" uploadConversion
+  post "/api/convert" $ uploadConversion logger
 
 lookupParam ::
      forall a. Parsable a
@@ -97,18 +102,41 @@ storeConversion key conversion@(Right c) = do
   writeConversion c $ conversionPath "uploads" key
   return conversion
 
-uploadConversion :: ActionM ()
-uploadConversion = do
+uploadConversion :: TimedFastLogger -> ActionM ()
+uploadConversion logger = do
   key <- liftIO nextRandom
   conversion <-
     getFileData >>= liftIO . uploadPpt key >>= getConversion key >>=
     liftIO . storeConversion key
   case conversion of
-    Left err -> status status400 >> text err
-    Right c -> status status202 >> json c
+    Left err -> do
+      actionLog logger err
+      status status400 >> text err
+    Right c -> do
+      actionLog logger $ concat ["Conversion queued: ", fromStrict (toText key)]
+      status status202 >> json c
+
+actionLog :: TimedFastLogger -> Text -> ActionM ()
+actionLog l t = liftIO $ log l t
+
+withLogging :: (TimedFastLogger -> IO a) -> IO a
+withLogging thing = do
+  timeFormat <- newTimeCache simpleTimeFormat
+  let stdoutLog = LogStdout defaultBufSize
+  withTimedFastLogger timeFormat stdoutLog thing
+
+formatLogStr :: ToLogStr msg => msg -> FormattedTime -> LogStr
+formatLogStr msg ft =
+  toLogStr ft <> toLogStr (": " :: String) <> toLogStr msg <>
+  toLogStr ("\n" :: String)
+
+log :: ToLogStr msg => TimedFastLogger -> msg -> IO ()
+log logger msg = logger $ formatLogStr msg
 
 main :: IO ()
-main = do
-  port <- maybe 9000 read <$> lookupEnv "PORT"
-  putStrLn $ "Running on port " ++ show port
-  scotty port app
+main = withLogging runStuff
+  where
+    runStuff logger = do
+      port <- maybe 9000 read <$> lookupEnv "PORT"
+      log logger ("Running on port " ++ show port)
+      scotty port $ app logger

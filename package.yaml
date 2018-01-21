@@ -30,6 +30,8 @@ library:
   - aeson
   - system-filepath
   - either
+  - turtle
+  - bytestring
 
 executables:
   transmografier-exe:
@@ -45,11 +47,10 @@ executables:
     - wai
     - wai-extra
     - http-types
-    - bytestring
     - system-filepath
-    - turtle
     - uuid
     - text
+    - fast-logger
 
 tests:
   transmografier-test:
