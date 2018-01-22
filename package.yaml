@@ -46,6 +46,7 @@ executables:
     - scotty
     - wai
     - wai-extra
+    - warp
     - http-types
     - system-filepath
     - uuid

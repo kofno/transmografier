@@ -17,6 +17,7 @@ import FileOps
         writePpt)
 import Filesystem.Path.CurrentOS (FilePath, fromText)
 import Network.HTTP.Types (status202, status400)
+import Network.Wai.Handler.Warp (run)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Network.Wai.Parse (FileInfo(..))
 import Prelude hiding (FilePath, concat, log)
@@ -27,7 +28,7 @@ import System.Log.FastLogger
 import System.Log.FastLogger.Date (newTimeCache, simpleTimeFormat)
 import Web.Scotty
        (ActionM, Parsable, ScottyM, files, get, json, middleware, param,
-        post, rescue, scotty, status, text)
+        post, rescue, scotty, scottyApp, status, text)
 
 type Result a = Either Text a
 
@@ -139,4 +140,4 @@ main = withLogging runStuff
     runStuff logger = do
       port <- maybe 9000 read <$> lookupEnv "PORT"
       log logger ("Running on port " ++ show port)
-      scotty port $ app logger
+      run port =<< scottyApp (app logger)
